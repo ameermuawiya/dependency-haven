@@ -27,7 +27,7 @@ LibVault is a modern, Material 3–based dependency management tool for Android 
 ## 🖼️ Screenshots
 
 | Main Dashboard | Downloads | Settings | About |
-|----------------|------------|-----------|--------|
+|----------------|-----------|----------|-------|
 | ![Main Dashboard](screenshots/main_dashboard.png) | ![Downloads Screen](screenshots/downloads_screen.png) | ![Settings Screen](screenshots/settings_screen.png) | ![About Screen](screenshots/about_screen.png) |
 
 ---
