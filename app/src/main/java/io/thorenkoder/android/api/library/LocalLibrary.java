@@ -32,8 +32,9 @@ public class LocalLibrary extends CachedLibrary {
   public LocalLibrary() {}
 
   public void setSourcePath(File sourcePath) {
-    this.sourcePath = new File(sourcePath, libraryName);
-  }
+    // FIX: Simply assign the path instead of appending the library name again.
+    this.sourcePath = sourcePath;
+}
 
   public File getSourcePath() {
     return this.sourcePath;

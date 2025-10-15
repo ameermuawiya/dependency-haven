@@ -7,6 +7,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import androidx.documentfile.provider.DocumentFile;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -27,7 +28,10 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 import androidx.lifecycle.ViewModelProvider;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-import com.google.android.material.navigationrail.NavigationRailView;
+// --- ADD THIS IMPORT ---
+import androidx.appcompat.widget.Toolbar;
+import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.bottomnavigation.BottomNavigationView;
 import io.thorenkoder.android.R;
 import io.thorenkoder.android.SharedPreferenceKeys;
 import io.thorenkoder.android.adapter.PagerAdapter;
@@ -37,6 +41,7 @@ import io.thorenkoder.android.util.Constants;
 import io.thorenkoder.android.util.PreferencesUtils;
 import io.thorenkoder.android.util.SDKUtil;
 import io.thorenkoder.android.util.SDKUtil.API;
+import android.content.SharedPreferences;
 import java.io.File;
 import mod.agus.jcoderz.lib.FileUtil;
 
@@ -48,6 +53,7 @@ public class MainFragment extends Fragment {
   private FragmentMainBinding binding;
   private SVM sVM;
   private ActivityResultLauncher<Intent> pickFolderResult;
+  private MaterialToolbar toolbar;
 
   private ActivityResultLauncher<String[]> mPermissionLauncher;
   private final ActivityResultContracts.RequestMultiplePermissions mPermissionsContract =
@@ -72,7 +78,6 @@ public class MainFragment extends Fragment {
                     PreferencesUtils.getDefaultPreferences()
                         .getString(SharedPreferenceKeys.KEY_LIBRARY_MANAGER, "");
                 if (libPref == null || (libPref != null && !new File(libPref).exists())) {
-                  // Permission granted
                   new MaterialAlertDialogBuilder(requireActivity())
                       .setTitle(R.string.select_download_dir_title)
                       .setMessage(R.string.select_download_dir_msg)
@@ -84,10 +89,8 @@ public class MainFragment extends Fragment {
                       .setNegativeButton(R.string.cancel, null)
                       .setCancelable(false)
                       .show();
-                  //	checkDexingRes();
                 }
               } else {
-                // Permission denied
                 new MaterialAlertDialogBuilder(requireActivity())
                     .setTitle(R.string.storage_permission_denied)
                     .setMessage(R.string.storage_permission_denial_prompt)
@@ -106,7 +109,7 @@ public class MainFragment extends Fragment {
                     .show();
               }
             });
-    // pick download folder
+
     pickFolderResult =
         registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),
@@ -122,20 +125,23 @@ public class MainFragment extends Fragment {
               }
             });
 
+    // CHANGE: The old checkDexingRes() call is replaced with the new intelligent method.
     if (!isPermissionGranted(requireActivity())) {
       requestPermission();
-    } else if (isPermissionGranted(requireActivity())) {
-      checkDexingRes();
+    } else {
+      initializeDexingResources();
     }
   }
 
+  // UPDATED METHOD
   @Nullable
   @Override
   public View onCreateView(
       LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
     binding = FragmentMainBinding.inflate(inflater, container, false);
+    toolbar = binding.toolbar;
     configurePages();
-    configureNavigationRail();
+    configureBottomNavigation();
     return binding.getRoot();
   }
 
@@ -164,7 +170,6 @@ public class MainFragment extends Fragment {
   @Override
   public void onResume() {
     super.onResume();
-    checkDexingRes();
   }
 
   @Override
@@ -173,56 +178,71 @@ public class MainFragment extends Fragment {
     this.binding = null;
   }
 
+  /**
+   * Sets the title of the shared Toolbar. Can be called from any child fragment.
+   *
+   * @param title The new title to display.
+   */
+  public void setToolbarTitle(String title) {
+    if (toolbar != null) {
+      toolbar.setTitle(title);
+    }
+  }
+
+  /**
+   * Sets the menu for the shared Toolbar and handles its clicks. Can be called from any child
+   * fragment to show context-specific options.
+   *
+   * @param menuResId The resource ID of the menu (e.g., R.menu.downloads_menu).
+   * @param listener The listener to handle menu item clicks.
+   */
+  public void setToolbarMenu(int menuResId, Toolbar.OnMenuItemClickListener listener) {
+    if (toolbar != null) {
+      toolbar.getMenu().clear(); // Remove old menu items
+      toolbar.inflateMenu(menuResId); // Add new menu items
+      toolbar.setOnMenuItemClickListener(listener);
+    }
+  }
+
+  /**
+   * Provides direct access to the Toolbar for more advanced control.
+   *
+   * @return The MaterialToolbar instance.
+   */
+  public MaterialToolbar getToolbar() {
+    return toolbar;
+  }
+
   private void configurePages() {
     adapter = new PagerAdapter(getChildFragmentManager(), getLifecycle());
     adapter.addFragment(DependencyManagerFragment.newInstance());
-    adapter.addFragment(CommunityFragment.newInstance());
+    adapter.addFragment(DownloadsFragment.newInstance());
     adapter.addFragment(SettingsFragment.newInstance());
     binding.pager.setOffscreenPageLimit(3);
     binding.pager.setUserInputEnabled(false);
     binding.pager.setAdapter(adapter);
   }
 
-  private void configureNavigationRail() {
-    // Set up your Navigation Rail here
-    NavigationRailView navigationRail = binding.navigationRail;
-    addHeaderView(navigationRail);
-    navigationRail
-        .getHeaderView()
-        .setOnClickListener(
-            headerView -> {
-              displayOpenYtChannelDialog();
-            });
-    navigationRail.setOnItemSelectedListener(
+  // NEW METHOD to replace configureNavigationRail()
+  private void configureBottomNavigation() {
+    // Get the BottomNavigationView from the binding
+    BottomNavigationView bottomNav = binding.bottomNavigation;
+
+    // Set up the listener for item selection
+    bottomNav.setOnItemSelectedListener(
         item -> {
-          trackableItem = item;
-          int position = item.getItemId();
-          binding.pager.setCurrentItem(position, false);
+          int itemId = item.getItemId();
+
+          if (itemId == R.id.nav_dependency) { // Use the ID from your menu file
+            binding.pager.setCurrentItem(0, false);
+          } else if (itemId == R.id.nav_downloads) { // Use the ID from your menu file
+            binding.pager.setCurrentItem(1, false);
+          } else if (itemId == R.id.nav_settings) { // Use the ID from your menu file
+            binding.pager.setCurrentItem(2, false);
+          }
+
           return true;
         });
-
-    // Configure the items for your Navigation Rail
-    navigationRail.getMenu().clear();
-    navigationRail
-        .getMenu()
-        .add(0, 0, 0, getContext().getString(R.string.dependency_manager))
-        .setIcon(R.drawable.ic_progress_download);
-    navigationRail
-        .getMenu()
-        .add(0, 1, 1, getContext().getString(R.string.community))
-        .setIcon(R.drawable.ic_account_group_outline);
-    navigationRail
-        .getMenu()
-        .add(0, 2, 2, getContext().getString(R.string.settings))
-        .setIcon(R.drawable.ic_cog_outline);
-  }
-
-  private void addHeaderView(NavigationRailView navigationRailView) {
-    navigationRailView.addHeaderView(R.layout.navigation_rail_header_view);
-  }
-
-  private void removeHeaderView(NavigationRailView navigationRailView) {
-    navigationRailView.removeHeaderView();
   }
 
   private void displayOpenYtChannelDialog() {
@@ -300,7 +320,6 @@ public class MainFragment extends Fragment {
     }
   }
 
-
   @SuppressLint("NewApi")
   public static boolean isPermissionGranted(Context context) {
     if (SDKUtil.isAtLeast(API.ANDROID_11)) {
@@ -344,5 +363,28 @@ public class MainFragment extends Fragment {
     public void setCanSelectFolder(boolean enabled) {
       this.canSelectFolder.setValue(enabled);
     }
+  }
+
+  /**
+   * Checks if dexing resources are initialized, and if not, runs the extraction on a background
+   * thread. This is a one-time operation.
+   */
+  private void initializeDexingResources() {
+    SharedPreferences prefs = PreferencesUtils.getPrivatePreferences();
+    boolean areResourcesInitialized = prefs.getBoolean("dex_resources_initialized", false);
+
+    // If already initialized, do nothing.
+    if (areResourcesInitialized) {
+      return;
+    }
+
+    // Run the heavy task on a background thread to not block the UI.
+    new Thread(
+            () -> {
+              checkDexingRes();
+              // After the task is done, save the flag so it doesn't run again.
+              prefs.edit().putBoolean("dex_resources_initialized", true).apply();
+            })
+        .start();
   }
 }

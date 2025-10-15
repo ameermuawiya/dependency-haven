@@ -69,4 +69,11 @@ public class LogAdapter extends RecyclerView.Adapter<LogAdapter.ViewHolder> {
       ((ViewGroup) view).addView(mText);
     }
   }
+
+// Add this new method inside your LogAdapter.java class
+
+public List<Log> getCurrentLogs() {
+    return mDiffer.getCurrentList();
+}
+
 }

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/action_item_copy"
+        android:title="Copy to libs" />
+    <item
+        android:id="@+id/action_item_move"
+        android:title="Move to libs" />
+    <item
+        android:id="@+id/action_item_delete"
+        android:title="Delete" />
+</menu>

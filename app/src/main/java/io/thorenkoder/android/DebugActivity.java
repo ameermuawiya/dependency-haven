@@ -1,124 +1,83 @@
 package io.thorenkoder.android;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.os.Process;
 import android.util.Log;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-import android.widget.TextView;
 import androidx.appcompat.app.AlertDialog;
-import android.content.Intent;
-import android.os.Build;
+import android.widget.TextView;
+import android.widget.Toast;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 public class DebugActivity extends Activity {
 
-  public static final String LOG_TAG = "CrashExceptionHandler";
-
-  private final String[] exceptionTypes = {
-    "StringIndexOutOfBoundsException",
-    "IndexOutOfBoundsException",
-    "ArithmeticException",
-    "NumberFormatException",
-    "ActivityNotFoundException",
-    "NullPointerException",
-    "IllegalStateException",
-    "ClassCastException",
-    "FileNotFoundException",
-  };
-
-  private final String[] exceptionMessages = {
-    "Invalid string operation",
-    "Invalid list operation",
-    "Invalid arithmetical operation",
-    "Invalid toNumber block operation",
-    "Invalid intent operation",
-    "A required object is null",
-    "An illegal state was encountered",
-    "Invalid type conversion",
-    "File not found",
-  };
-
-  @Override
-  protected void onCreate(Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
-    handleErrorMessage();
-  }
-
-  private void handleErrorMessage() {
-    Intent intent = getIntent();
-    String errorMessage = intent.getStringExtra("error");
-    String madeErrorMessage = createFormattedErrorMessage(errorMessage);
-    showErrorDialog(madeErrorMessage);
-  }
-
-  private String createFormattedErrorMessage(String errorMessage) {
-    String madeErrorMessage = errorMessage;
-    try {
-      for (int j = 0; j < exceptionTypes.length; j++) {
-        if (errorMessage.contains(exceptionTypes[j])) {
-          String exceptionType = exceptionTypes[j];
-          int addIndex = errorMessage.indexOf(exceptionType) + exceptionType.length();
-          madeErrorMessage =
-              exceptionMessages[j]
-                  + errorMessage.substring(addIndex)
-                  + "\n\n"
-                  + getBaseContext().getString(R.string.msg_error_format)
-                  + ":\n"
-                  + errorMessage;
-          break;
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        
+        Intent intent = getIntent();
+        String errorMessage = intent.getStringExtra("error");
+        
+        if (errorMessage == null) {
+            errorMessage = "No error log available.";
         }
-      }
-      if (madeErrorMessage.isEmpty()) {
-        madeErrorMessage = errorMessage;
-      }
-    } catch (Exception e) {
-      madeErrorMessage =
-          getString(R.string.msg_error_while_collecting_error) + ":" + Log.getStackTraceString(e);
-    }
-    return madeErrorMessage;
-  }
 
-  private void showErrorDialog(String error) {
-    MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(this);
-    builder.setTitle(getBaseContext().getString(R.string.msg_app_crashed));
-    builder.setMessage(getBaseContext().getString(R.string.msg_app_crashed_error) + "\n\n" + error);
-    builder.setPositiveButton(
-        getBaseContext().getString(R.string.restart), (dialog, which) -> restartApp());
-    builder.setNegativeButton(
-        getBaseContext().getString(R.string.cancel), (dialog, which) -> dialog.dismiss());
-    builder.setNeutralButton(
-        getBaseContext().getString(R.string.share), (dialog, which) -> shareText(error));
-    builder.setCancelable(false);
+        showErrorDialog(errorMessage);
+    }
+
+    private void showErrorDialog(final String errorLog) {
+    // 1. First, create the builder and configure it
+    MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(this)
+        .setTitle(R.string.msg_app_crashed)
+        .setMessage(getString(R.string.msg_app_crashed_error) + "\n\n" + errorLog)
+        .setCancelable(false)
+        .setPositiveButton(R.string.restart, (dialog, which) -> restartApp())
+        .setNeutralButton("Copy & Exit", (dialog, which) -> copyAndExit(errorLog))
+        .setNegativeButton(R.string.exit, (dialog, which) -> finishAffinity());
+
+    // 2. Create the dialog object from the builder
     final AlertDialog dialog = builder.create();
+
+    // 3. Set the listener on the created dialog object
+    dialog.setOnShowListener(d -> {
+        TextView messageView = dialog.findViewById(android.R.id.message);
+        if (messageView != null) {
+            messageView.setTextIsSelectable(true);
+        }
+    });
+
+    // 4. Finally, show the dialog
     dialog.show();
-    ((TextView) dialog.findViewById(android.R.id.message)).setTextIsSelectable(true);
-  }
+}
 
-  // Share Error message
-  private void shareText(final String mText) {
-    Intent shareTextIntent = new Intent();
-    shareTextIntent.setAction(Intent.ACTION_SEND);
-    shareTextIntent.putExtra(Intent.EXTRA_TEXT, mText);
-    shareTextIntent.setType("text/plain");
-    startActivity(
-        Intent.createChooser(
-            shareTextIntent, getBaseContext().getString(R.string.msg_share_error)));
-  }
+    /**
+     * Copies the provided error log to the clipboard and then finishes the activity.
+     * @param errorLog The error string to be copied.
+     */
+    private void copyAndExit(String errorLog) {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        ClipData clip = ClipData.newPlainText("CrashLog", errorLog);
+        clipboard.setPrimaryClip(clip);
+        
+        // Show a confirmation message
+        Toast.makeText(this, "Logs copied to clipboard", Toast.LENGTH_SHORT).show();
+        
+        // Close the entire app after copying
+        finishAffinity();
+    }
 
-  private void restartApp() {
-    Intent intent =
-        getBaseContext()
-            .getPackageManager()
-            .getLaunchIntentForPackage(getBaseContext().getPackageName());
-    if (intent != null) {
-      intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-      this.startActivity(intent);
-      finish();
+    private void restartApp() {
+        Intent intent = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        if (intent != null) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(intent);
+        }
+        // Forcefully close the crashed process to ensure a clean start
+        Process.killProcess(Process.myPid());
+        System.exit(1);
     }
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      Process.killProcess(Process.myPid());
-    } else {
-      System.exit(1);
-    }
-  }
 }

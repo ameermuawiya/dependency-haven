@@ -1,99 +1,120 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical" >
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:gravity="center_horizontal"
-        android:orientation="vertical" >
-
-        <LinearLayout
-            android:id="@+id/top_bar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="?android:attr/selectableItemBackground"
-            android:baselineAligned="false"
-            android:clipToPadding="false"
-            android:gravity="center_vertical"
-            android:minHeight="?android:attr/listPreferredItemHeightSmall"
-            android:paddingEnd="?android:attr/listPreferredItemPaddingEnd"
-            android:paddingLeft="?android:attr/listPreferredItemPaddingLeft"
-            android:paddingRight="?android:attr/listPreferredItemPaddingRight"
-            android:paddingStart="?android:attr/listPreferredItemPaddingStart" >
-
-            <RelativeLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:paddingBottom="16dp"
-                android:paddingTop="16dp" >
-
-                <com.google.android.material.textview.MaterialTextView
-                    android:id="@android:id/title"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:ellipsize="marquee"
-                    android:singleLine="true"
-                    android:text="@string/dependency_manager"
-                    android:textAppearance="?android:attr/textAppearanceListItem" />
-
-                <com.google.android.material.textview.MaterialTextView
-                    android:id="@android:id/summary"
-                    style="@style/PreferenceSummaryTextStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_alignLeft="@android:id/title"
-                    android:layout_alignStart="@android:id/title"
-                    android:layout_below="@android:id/title"
-                    android:layout_gravity="start"
-                    android:maxLines="10"
-                    android:text="@string/dependency_manager_desc"
-                    android:textAlignment="viewStart"
-                    android:textColor="?android:attr/textColorSecondary" />
-            </RelativeLayout>
-        </LinearLayout>
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
 
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/til_dep_name"
-            style="@style/Widget.Material3.TextInputEditText.OutlinedBox.Dense"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:hint="@string/til_dependency_hint" >
+            android:hint="@string/dependency">
 
             <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/dependency_edit_text"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:imeOptions="actionDone"
+                android:maxLines="1"
                 android:singleLine="true" />
         </com.google.android.material.textfield.TextInputLayout>
 
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/skip_dependency_switch"
-            android:layout_width="wrap_content"
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-			android:visibility="visible"
-            android:text="@string/skip_sub_dependencies"
-            android:textSize="16sp" />
+            app:cardElevation="2dp"
+            app:contentPadding="16dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/download_button"
-            style="@style/Widget.Material3.Button"
-            android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/transitive_dependencies_switch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/skip_sub_dependencies"
+                    android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Enable this to download all inner libraries. This may take more time and consume more data."
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?android:attr/textColorSecondary" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/download_progress_indicator"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="@string/download" />
+            android:indeterminate="true"
+            android:visibility="gone" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/download_button"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/download" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/stop_button"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Stop"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:text="Logs"
+                android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/copy_logs_button"
+                style="@style/Widget.Material3.Button.TextButton.Icon"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:text="Copy"
+                app:icon="@drawable/ic_content_copy" />
+        </RelativeLayout>
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/log_recyclerview"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_height="250dp"
             android:layout_marginTop="8dp"
-            android:nestedScrollingEnabled="false"
-            android:padding="8dp" />
-    </LinearLayout>
+            android:background="?attr/colorSurfaceContainer"
+            android:padding="8dp"
+            app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
-</LinearLayout>
+    </LinearLayout>
+</ScrollView>

@@ -69,45 +69,92 @@ public class LocalStorageFactory implements StorageFactory {
 
   @Override
   public File getLibrary(Pom pom) {
+    // Safety check for pom and its dependency
+    if (pom == null || pom.getDependency() == null) {
+      if (downloadCallback != null) {
+        downloadCallback.error("Cannot get library for a null POM/Dependency.");
+      }
+      return null;
+    }
+
     String fileName = pom.getDependency().toString();
-    String relativePath = DependencyResolver.getLibraryDownloadURL(pom.getDependency());
-    // check if file library is cached
-    for (LocalRepository repository : LocalRepository.getRepositories(getCacheDirectory())) {
-      try {
-        File cachedFile = getCachedFile(repository, relativePath);
-        if (cachedFile != null && cachedFile.exists()) {
-          downloadCallback.info("Library for " + fileName + " found in cache");
-          return cachedFile;
-        }
-      } catch (Exception e) {
+
+    // --- START: AAR/JAR FALLBACK LOGIC ---
+
+    // Step 1: Define paths for both .aar and .jar
+    String aarRelativePath =
+        DependencyResolver.getPathFromDeclaration(pom.getDependency()) + ".aar";
+    String jarRelativePath =
+        DependencyResolver.getPathFromDeclaration(pom.getDependency()) + ".jar";
+
+    // Step 2: Try to find the .aar file first (in cache and remote)
+    if (downloadCallback != null) {
+      downloadCallback.info("Attempting to find " + fileName + " as .aar");
+    }
+    File libraryFile = findLibraryByPath(pom.getDependency(), aarRelativePath);
+
+    // Step 3: If .aar is not found, try to find the .jar file
+    if (libraryFile == null) {
+      if (downloadCallback != null) {
         downloadCallback.warning(
-            "Cannot find "
+            ".aar not found for " + fileName + ". Now attempting to find as .jar");
+      }
+      libraryFile = findLibraryByPath(pom.getDependency(), jarRelativePath);
+    }
+
+    // Step 4: If neither was found, log a final error
+    if (libraryFile == null) {
+      if (downloadCallback != null) {
+        downloadCallback.error(
+            "Download failed for: "
                 + fileName
-                + " in local repository "
-                + repository.getName()
-                + ", starting search in remote repository");
+                + ". Neither .aar nor .jar was found in any repository.");
       }
     }
-    // cannot find file library in local repositories , try retrieving from a remote repositories
-    for (RemoteRepository repository : resolver.repositories) {
-      try {
-        File file = getFile(repository, relativePath);
-        if (file != null && file.exists()) {
-          downloadCallback.info(
-              "Library for " + fileName + " found in remote repository " + repository.getName());
-          return file;
+
+    return libraryFile;
+    // --- END: AAR/JAR FALLBACK LOGIC ---
+  }
+
+  // I've created a new private helper method to avoid duplicating the search logic.
+  // This keeps the code clean and uses the structure you already have.
+  private File findLibraryByPath(Dependency dependency, String relativePath) {
+    // Check cache first
+    if (cacheDirectory != null) {
+      for (LocalRepository repository : LocalRepository.getRepositories(getCacheDirectory())) {
+        try {
+          File cachedFile = getCachedFile(repository, relativePath);
+          if (cachedFile != null && cachedFile.exists()) {
+            return cachedFile;
+          }
+        } catch (IOException e) {
+          // Continue to next repository
         }
-      } catch (Exception e) {
-        downloadCallback.warning(
-            "An error occured! Library for "
-                + fileName
-                + " was not found in remote repository "
-                + repository.getName()
-                + " ERROR:"
-                + e);
       }
     }
-    return null;
+
+    // If not in cache, check remote repositories
+    if (resolver != null && resolver.repositories != null) {
+      for (RemoteRepository repository : resolver.repositories) {
+        try {
+          File file = getFile(repository, relativePath);
+          if (file != null && file.exists()) {
+            if (downloadCallback != null) {
+              downloadCallback.info(
+                  "Library for "
+                      + dependency.toString()
+                      + " found in remote repository: "
+                      + repository.getName());
+            }
+            return file;
+          }
+        } catch (IOException e) {
+          // Continue to next repository
+        }
+      }
+    }
+
+    return null; // Not found anywhere
   }
 
   private File getCachedFile(ArtifactRepository repository, String relativePath)
@@ -134,25 +181,25 @@ public class LocalStorageFactory implements StorageFactory {
     return downloadFile(repository, relativePath);
   }
 
-  /**
-   * Downloads a file and saves it
-   *
-   * @param repository the remote repository the file exist in
-   * @param relativePath the relative path to the file we want to download
-   */
   private File downloadFile(ArtifactRepository repository, String relativePath) {
     String downloadUrl = repository.getUrl() + relativePath;
     try {
       URL url = new URL(downloadUrl);
-      downloadCallback.info("Fetching " + relativePath + " from " + repository.getName());
+      if (downloadCallback != null) {
+        downloadCallback.info("Fetching " + relativePath + " from " + repository.getName());
+      }
+
       InputStream inputStream = url.openStream();
       if (inputStream != null) {
-        downloadCallback.info(relativePath + " downloaded");
-        // save the file to cache, and return it
+        if (downloadCallback != null) {
+          downloadCallback.info(relativePath + " downloaded");
+        }
         return save(repository, relativePath, inputStream);
       }
     } catch (IOException e) {
-      downloadCallback.error(relativePath + " was not found at " + repository.getName());
+      if (downloadCallback != null) {
+        downloadCallback.error(relativePath + " was not found at " + repository.getName());
+      }
     }
     return null;
   }
@@ -204,12 +251,23 @@ public class LocalStorageFactory implements StorageFactory {
   public void downloadLibraries(Pom pom) {
     List<Dependency> resolvedDependencies = pom.getDependencies();
     if (resolvedDependencies == null || resolvedDependencies.isEmpty()) {
+      // If there's nothing to download, call done with an empty list.
+      if (downloadCallback != null) {
+        downloadCallback.done(new ArrayList<>());
+      }
       return;
     }
+
     List<CachedLibrary> cachedLibraryList = new ArrayList<>();
     for (Dependency dependency : resolvedDependencies) {
+
+      // ADDED: Safety check to prevent NullPointerException
+      if (dependency == null) {
+        continue; // Ignore this null entry and proceed to the next dependency
+      }
+
       File library = getLibrary(new Pom(dependency));
-      // track all cached libraries library
+      // track all cached libraries
       if (library != null) {
         CachedLibrary cachedLibrary = new CachedLibrary();
         cachedLibrary.setSourcePath(library.getAbsolutePath());
@@ -219,7 +277,10 @@ public class LocalStorageFactory implements StorageFactory {
         cachedLibraryList.add(cachedLibrary);
       }
     }
-    downloadCallback.done(cachedLibraryList);
+
+    if (downloadCallback != null) {
+      downloadCallback.done(cachedLibraryList);
+    }
   }
 
   @Override

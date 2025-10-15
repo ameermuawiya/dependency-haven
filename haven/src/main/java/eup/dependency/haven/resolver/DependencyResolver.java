@@ -1,23 +1,3 @@
-/*
- *  MIT License
- *  Copyright (c) 2023 EUP
- *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to deal
- *  in the Software without restriction, including without limitation the rights
- *  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *  copies of the Software, and to permit persons to whom the Software is
- *  furnished to do so, subject to the following conditions:
- *  The above copyright notice and this permission notice shall be included in all
- *  copies or substantial portions of the Software.
- *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- *  SOFTWARE.
- */
-
 package eup.dependency.haven.resolver;
 
 import eup.dependency.haven.async.AsyncTaskExecutor;
@@ -54,19 +34,14 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import org.xml.sax.SAXException;
 
-/**
- * A {@code DependencyResolver} resolves a {@link Dependency} coordinates {@link Coordinates} from a
- * {@link ArtifactRepository} to provide the direct dependencies including all it's transitive
- * depdendencies for each {@link Coordinates} of the dependency of the dependencies declared in
- * their respective {@link Pom}
- *
- * @author EUP
- */
 @SuppressWarnings("unused")
 public class DependencyResolver implements Repository {
 
   private Coordinates coordinates;
 
+  // Add these two new member variables at the top of your class
+  private volatile boolean isCancelled = false;
+  private ExecutorService executorService;
   // data structure for bfs transversal
   private Queue<Dependency> queue = new LinkedList<>();
   private Set<Dependency> seen = new HashSet<>();
@@ -80,6 +55,7 @@ public class DependencyResolver implements Repository {
   private DependencyResolutionSkipper skipper;
   public final List<RemoteRepository> repositories;
   private boolean skipInnerDependencies = false;
+
   // TODO: REWORK THIS CLASS TO USE POM INSTEAD OF DEPENDEBCY WHILE ITERATING
   // SO THAT I CLOUD PRIORITIZE HIGHER VERSIONS OF POMS USING MAP WITH OREFERENCE TO HIGHER POM
   // VERSIONS
@@ -105,54 +81,125 @@ public class DependencyResolver implements Repository {
     this.repositories = new ArrayList<>();
   }
 
-  /**
-   * Initlize resoution for the given dependency by reading its POM file
-   *
-   * @param callback the dependency to resolution listener
-   */
   public void resolve(DependencyResolutionCallback callback) {
+    this.isCancelled = false;
     this.callback = callback;
     this.skipper = new DependencyResolutionSkipper(callback);
+
     if (callback == null) {
-      throw new IllegalArgumentException("Dependency Resolution Callback must be set.");
+        throw new IllegalArgumentException("Dependency Resolution Callback must be set.");
     }
+
     if (coordinates == null || coordinates.toString().isEmpty()) {
-      callback.warning(
-          "Enter a dependency declaration!"
-              + "\n"
-              + "Haven supports any of the following declaration formats"
-              + "\n"
-              + " Gradle Groovy implementation"
-              + "\n"
-              + " Gradle Kotlin implementation"
-              + "\n"
-              + " GroupID:ArtifactID:Version");
-      return;
+        callback.warning("Please enter a dependency declaration.");
+        return;
     }
+
+    this.resolvedDependencies.clear();
+    this.unresolvedDependencies.clear();
+    this.seen.clear();
+    this.queue.clear();
+
     try {
-      // Record the start time
-      long startTime = System.currentTimeMillis();
-      callback.info("Starting Resolution for " + coordinates);
-      AsyncTaskExecutor.loadTaskAsync(
-          () -> {
-            //  run on a background thread
-            List<Dependency> dependencies = resolveDependencies(new Dependency(coordinates));
-            return dependencies;
-          },
-          dependencies -> {
-            // runs on the main thread
-            long endTime = System.currentTimeMillis();
-            if (dependencies.isEmpty()) {
-              callback.warning("No dependencies found for " + coordinates);
-            } else {
-              callback.onDependenciesResolved(
-                  "Successfully resolved " + coordinates, dependencies, (endTime - startTime));
-            }
-          });
+        long startTime = System.currentTimeMillis();
+        callback.info("Starting Resolution for " + coordinates);
+
+        AsyncTaskExecutor.loadTaskAsync(
+            () -> {
+                Dependency rootDependency = new Dependency(coordinates);
+                
+                if (skipInnerDependencies) {
+                    InputStream pomStream = searchRepositories(rootDependency);
+                    if (pomStream == null) {
+                        unresolvedDependencies.add(rootDependency);
+                        return null; // Failure
+                    }
+                    try {
+                        Pom parsedPom = resolvePom(pomStream);
+                        String packaging = parsedPom.getCoordinates().getPackaging();
+                        if (packaging != null && !packaging.isEmpty()) {
+                            rootDependency.setType(packaging);
+                        }
+                        resolvedDependencies.add(rootDependency);
+                    } finally {
+                        pomStream.close();
+                    }
+                    return resolvedDependencies;
+                }
+
+                // --- Start: Full Transitive Dependency Resolution (BFS) ---
+                queue.add(rootDependency);
+                seen.add(rootDependency);
+
+                while (!queue.isEmpty()) {
+                    if (isCancelled) break;
+
+                    Dependency currentDependency = queue.poll();
+                    callback.info("Resolving: " + currentDependency);
+                    
+                    InputStream pomStream = searchRepositories(currentDependency);
+                    if (pomStream == null) {
+                        callback.warning("Could not find POM for: " + currentDependency);
+                        unresolvedDependencies.add(currentDependency);
+                        continue; // Skip to next dependency in queue
+                    }
+
+                    try {
+                        Pom parsedPom = resolvePom(pomStream);
+                        
+                        // Set packaging type if not already set
+                        if (currentDependency.getType() == null || currentDependency.getType().isEmpty()) {
+                            String packaging = parsedPom.getCoordinates().getPackaging();
+                            if (packaging != null && !packaging.isEmpty()) {
+                                currentDependency.setType(packaging);
+                            }
+                        }
+                        
+                        // Add the successfully resolved dependency to the final list
+                        if (!resolvedDependencies.contains(currentDependency)) {
+                            resolvedDependencies.add(currentDependency);
+                        }
+                        
+                        // Add its children to the queue
+                        for (Dependency child : parsedPom.getDependencies()) {
+                            if (!seen.contains(child)) {
+                                seen.add(child);
+                                queue.add(child);
+                            }
+                        }
+                    } finally {
+                        pomStream.close();
+                    }
+                }
+                // --- End: Full Transitive Dependency Resolution (BFS) ---
+
+                if (isCancelled) return Collections.emptyList();
+                
+                if (resolvedDependencies.isEmpty()) {
+                    return null; // Indicate failure
+                }
+
+                return resolvedDependencies;
+            },
+            (List<Dependency> resultDependencies) -> {
+                long endTime = System.currentTimeMillis();
+
+                if (isCancelled) {
+                    callback.warning("Resolution was cancelled by the user.");
+                    return;
+                }
+                
+                if (resultDependencies == null || resultDependencies.isEmpty()) {
+                    String finalError = "Could not resolve: " + coordinates + ".\n" + "Please check the library name, version, and your internet connection.";
+                    callback.onDependencyNotResolved(finalError, unresolvedDependencies);
+                } else {
+                    callback.onDependenciesResolved("Successfully resolved " + coordinates, resultDependencies, (endTime - startTime));
+                }
+            });
     } catch (Exception e) {
-      callback.error("Failed to resolve " + coordinates + " " + e.getMessage());
+        callback.error("Failed to resolve " + coordinates + ": " + e.getMessage());
     }
-  }
+}
 
   /**
    * Resolves a dependency and adds its direct and transitive to list
@@ -254,6 +301,12 @@ public class DependencyResolver implements Repository {
     }
 
     while (!queue.isEmpty()) {
+
+      if (isCancelled) {
+        callback.warning("Resolution was cancelled.");
+        return; // Stop the loop immediately
+      }
+
       // pull a dependency to resolve
       Dependency currentDependency = queue.poll();
 
@@ -387,81 +440,33 @@ public class DependencyResolver implements Repository {
     return firstComparableVersion.compareTo(secondComparableVersion);
   }
 
-  /**
-   * Searches for a dependency in either a {@link LocalRepository} or {@link RemoteRepository}
-   *
-   * @param dependency the dependency to search for
-   */
   public InputStream searchRepositories(Dependency dependency) {
+    if (dependency == null) {
+      return null;
+    }
     String pomPath = getPomDownloadURL(dependency);
 
-    if (storageFactory != null) {
-      // Try to fetch from local repositories first
-      List<LocalRepository> repositories =
-          LocalRepository.getRepositories(storageFactory.getCacheDirectory());
-      for (LocalRepository localRepository : repositories) {
-        File localFile = new File(localRepository.getUrl() + "/" + pomPath);
-        if (localFile.exists()) {
-          try {
-            return new FileInputStream(localFile);
-          } catch (IOException e) {
-            callback.warning(
-                "Error fetching artifact "
-                    + dependency
-                    + " from local repository: "
-                    + e.getMessage());
+    for (RemoteRepository repository : repositories) {
+      if (isCancelled) {
+        return null;
+      }
+
+      File pomFile = storageFactory.downloadPom(dependency, repository, pomPath);
+
+      if (pomFile != null && pomFile.exists()) {
+        try {
+          if (callback != null) {
+            callback.info("Found " + dependency.getCoordinates() + " in " + repository.getName());
+          }
+          return new FileInputStream(pomFile);
+        } catch (java.io.FileNotFoundException e) {
+          if (callback != null) {
+            callback.error("Found POM file but failed to open it: " + e.getMessage());
           }
         }
       }
     }
-
-    // If not found in local repositories, try to fetch dependencies from remote repositories
-    // concurrently
-    int availableCores = Runtime.getRuntime().availableProcessors();
-
-    ExecutorService executorService = Executors.newFixedThreadPool(availableCores);
-    // hold Future objects
-    List<Future<Map<RemoteRepository, URL>>> futures = new ArrayList<>();
-
-    for (RemoteRepository remoteRepository : repositories) {
-
-      Callable<Map<RemoteRepository, URL>> fetchTask =
-          () -> {
-            URL downloadUrl = new URL(remoteRepository.getUrl() + pomPath);
-            Map<RemoteRepository, URL> i = new HashMap<>();
-            i.put(remoteRepository, downloadUrl);
-            return i;
-          };
-      // Submit the fetch task to the executor
-      Future<Map<RemoteRepository, URL>> future = executorService.submit(fetchTask);
-      futures.add(future);
-    }
-
-    // Wait for the first successful result and return it
-    for (Future<Map<RemoteRepository, URL>> future : futures) {
-      try {
-        Map<RemoteRepository, URL> map = future.get();
-        for (Entry<RemoteRepository, URL> entry : map.entrySet()) {
-          InputStream is = entry.getValue().openStream();
-          RemoteRepository remoteRepository = entry.getKey();
-          if (is != null) {
-            if (storageFactory != null) {
-              // download the pom of the respective dependency
-              storageFactory.downloadPom(dependency, remoteRepository, pomPath);
-            }
-            executorService.shutdownNow(); // Terminate other tasks
-            return is;
-          }
-        }
-      } catch (InterruptedException | ExecutionException | IOException e) {
-        callback.warning(
-            "Error fetching artifact"
-                + dependency.toString()
-                + " from remote repository: "
-                + e.getMessage());
-      }
-    }
-    return null; // no result found
+    return null;
   }
 
   /**
@@ -479,7 +484,7 @@ public class DependencyResolver implements Repository {
         + ("aar".equalsIgnoreCase(dependency.getType())
             ? ".aar"
             : ".jar" /*+ dependency.getType()*/); // was dependency.getType() but bundle e.t.c could
-                                                  // also mean .jar
+    // also mean .jar
   }
 
   /**
@@ -524,5 +529,14 @@ public class DependencyResolver implements Repository {
   @Override
   public void addRepository(String name, String url) {
     addRepository(new RemoteRepository(name, url));
+  }
+
+  /** Cancels all ongoing resolution and download tasks. */
+  public void cancel() {
+    this.isCancelled = true;
+    if (this.executorService != null && !this.executorService.isShutdown()) {
+      // This will interrupt all background network tasks immediately.
+      this.executorService.shutdownNow();
+    }
   }
 }
