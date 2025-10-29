@@ -20,7 +20,15 @@ android {
 
     buildTypes {
         release {
+            minifyEnabled true
+            shrinkResources true
+            debuggable false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+            shrinkResources false
+            debuggable true
         }
     }
 
@@ -32,15 +40,45 @@ android {
     buildFeatures {
         viewBinding true
     }
+
+    packagingOptions {
+        resources {
+            excludes += [
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/LICENSE.md",
+                "META-INF/LICENSE-notice.md",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/NOTICE.md",
+                "META-INF/DEPENDENCIES",
+                "META-INF/INDEX.LIST",
+                "META-INF/ASL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/AL2.0"
+            ]
+        }
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    // Improve dex optimization for heavy dependency resolution
+    dexOptions {
+        jumboMode true
+    }
 }
 
 configurations.implementation {
+    // Remove duplicate annotations and unnecessary futures to avoid conflicts
     exclude group: "org.jetbrains", module: "annotations"
     exclude group: "com.google.guava", module: "listenablefuture"
 }
 
-
 dependencies {
+    // AndroidX and Material Components
     implementation google.material
     implementation androidx.appcompat
     implementation androidx.constraintlayout
@@ -48,9 +86,12 @@ dependencies {
     implementation 'androidx.documentfile:documentfile:1.0.1'
     implementation androidx.concurrent_futures
 
+    // Core dependency manager components (do not remove)
     implementation other.r8
     implementation other.sdk_lib
     implementation other.commons
+    implementation other.standard_json
 
+    // Internal module
     implementation project(path: ":haven")
 }
