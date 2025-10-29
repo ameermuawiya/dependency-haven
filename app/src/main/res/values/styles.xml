@@ -5,7 +5,7 @@
     <!-- App main theme using DayNight -->
     <style
         name="AppTheme"
-        parent="Theme.Material3.DayNight.NoActionBar">
+        parent="Theme.Material3Expressive.DynamicColors.Light.NoActionBar">
 
         <!-- Status bar & navigation bar setup -->
         <item name="android:statusBarColor">?attr/colorSurface</item>
@@ -75,31 +75,21 @@
         <item name="colorSurfaceContainerHighest">@color/colorSurfaceContainerHighest</item>
     </style>
 
-    <!-- Fullscreen variant -->
     <style
-        name="FullScreen"
-        parent="Theme.Material3.DayNight.NoActionBar" />
-
-    <!-- NoActionBar variant -->
-    <style
-        name="NoActionBar"
-        parent="Theme.Material3.DayNight.NoActionBar" />
-
-    <style
-            name="AppTheme.AlertDialogTheme"
-            parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        name="AppTheme.AlertDialogTheme"
+        parent="ThemeOverlay.Material3.MaterialAlertDialog">
         <item name="dialogCornerRadius">28dp</item>
     </style>
 
     <style
-            name="AppPreferenceThemeOverlay"
-            parent="@style/PreferenceThemeOverlay">
+        name="AppPreferenceThemeOverlay"
+        parent="@style/PreferenceThemeOverlay">
         <item name="switchPreferenceCompatStyle">@style/AppSwitchPreference</item>
     </style>
 
     <style
-            name="AppSwitchPreference"
-            parent="@style/Preference.SwitchPreferenceCompat.Material">
+        name="AppSwitchPreference"
+        parent="@style/Preference.SwitchPreferenceCompat.Material">
         <item name="widgetLayout">@layout/layout_material_switch</item>
     </style>
 </resources>
